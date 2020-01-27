@@ -1,0 +1,221 @@
+---
+title: "HUDK4051: Prediction - Comparing Trees"
+author: "Charles Lang"
+date: "1/9/2018"
+output: html_document
+---
+
+In this assignment you will modelling student data using three flavors of tree algorithm: CART, C4.5 and C5.0. We will be using these algorithms to attempt to predict which students drop out of courses. Many universities have a problem with students over-enrolling in courses at the beginning of semester and then dropping most of them as the make decisions about which classes to attend. This makes it difficult to plan for the semester and allocate resources. However, schools don't want to restrict the choice of their students. One solution is to create predictions of which students are likley to drop out of which courses and use these predictions to inform semester planning. 
+
+In this assignment we will be using the tree algorithms to build models of which students are likely to drop out of which classes. 
+
+## Software
+
+In order to generate our models we will need several packages. The first package you should install is [caret](https://cran.r-project.org/web/packages/caret/index.html).
+
+install.packages("caret")
+library(caret)
+
+There are many prediction packages available and they all have slightly different syntax. caret is a package that brings all the different algorithms under one hood using the same syntax. 
+
+We will also be accessing an algorithm from the [Weka suite](https://www.cs.waikato.ac.nz/~ml/weka/). Weka is a collection of machine learning algorithms that have been implemented in Java and made freely available by the University of Waikato in New Zealand. To access these algorithms you will need to first install both the [Java Runtime Environment (JRE) and Java Development Kit](http://www.oracle.com/technetwork/java/javase/downloads/jre9-downloads-3848532.html) on your machine. You can then then install the [RWeka](https://cran.r-project.org/web/packages/RWeka/index.html) package within R.
+
+install.packages("RWeka")
+library(RWeka)
+
+(Issue 1: failure to install RWeka/RWekajars, paste "sudo R CMD javareconf" into terminal and try to install again)
+
+The last package you will need is [C50](https://cran.r-project.org/web/packages/C50/index.html).
+
+install.packages("C50")
+library(C50)
+## Data
+
+The data comes from a university registrar's office. The code book for the variables are available in the file code-book.txt. Examine the variables and their definitions.
+
+Upload the drop-out.csv data into R as a data frame. 
+
+```{r}
+library(readr)
+drop_out <- read_csv("drop-out.csv")
+View(drop_out)
+as.data.frame(drop_out)
+is.data.frame(drop_out)
+```
+
+The next step is to separate your data set into a training set and a test set. Randomly select 25% of the students to be the test data set and leave the remaining 75% for your training data set. (Hint: each row represents an answer, not a single student.)
+
+```{r}
+
+studentid<-unique(drop_out$student_id)
+test<- sample(studentid, 170, replace = F)
+TEST<-drop_out[drop_out$student_id %in%test,]
+TRAIN<-drop_out[!drop_out$student_id%in%test]
+
+
+```
+
+For this assignment you will be predicting the student level variable "complete". 
+(Hint: make sure you understand the increments of each of your chosen variables, this will impact your tree construction) 
+
+Visualize the relationships between your chosen variables as a scatterplot matrix.  Save your image as a .pdf named scatterplot_matrix.pdf. Based on this visualization do you see any patterns of interest? Why or why not?
+
+```{r}
+drop_out$complete<-ifelse(drop_out$complete=='yes', 1, 0)
+drop_out$international<-ifelse(drop_out$international=='yes', 1, 0)
+drop_out$online<-ifelse(drop_out$online=='yes', 1, 0)
+pdf("scatterplot_matrix.pdf") 
+pairs(drop_out[,-1])
+dev.off()
+
+#Based on the scatterplot, I found the patterns of "years" is not symmetrical, so I think this pattern would be important in prediction.
+
+
+
+
+```
+
+## CART Trees
+
+In HUDK4050 we used the [rpart package](https://cran.r-project.org/web/packages/rpart/rpart.pdf) to generate CART tree models. Review your work using this package if you cannot remember how the trees are constructed. 
+
+install.packages("rpart")
+library("rpart")
+
+Construct a classification tree that predicts complete using the caret package.
+
+```{r}
+library(caret)
+
+TRAIN2 <- TRAIN[,c(2:10)] #Remove the student_id variable that we do not want to use in the model
+TRAIN2$complete<-as.factor(TRAIN2$complete)
+TRAIN2$international<-as.factor(TRAIN2$international)
+TRAIN2$online<-as.factor(TRAIN2$online)
+
+TEST2$complete<-as.factor(TEST2$complete)
+TEST2$international<-as.factor(TEST2$international)
+TEST2$online<-as.factor(TEST2$online)
+
+#Define the control elements we would like to use
+ctrl <- trainControl(method = "repeatedcv", #Tell caret to perform 10-fold cross validation
+                repeats = 3, #Tell caret to repeat each fold three times
+                classProbs = TRUE, #Calculate class probabilities for ROC calculation
+                summaryFunction = twoClassSummary)
+
+#Define the model
+cartFit <- train(complete ~ ., #Define which variable to predict 
+                data = TRAIN2, #Define the data set to train the model on
+                trControl = ctrl, #Tell caret the control elements
+                method = "rpart", #Define the model type
+                metric = "ROC", #Tell caret to calculate the ROC curve
+                preProc = c("center", "scale")) #Center and scale the data to minimize the 
+
+#Check the results
+cartFit
+summary(cartFit)
+                
+#Plot ROC against complexity 
+plot(cartFit)
+
+```
+
+Describe important model attribues of your tree. Do you believe it is a successful model of student performance, why/why not?
+#CART constructs binary trees. The root nodes represents input variables and a split point on those variables.The leaf nodes represents output variables which are used to make a prediction.
+#reference:https://machinelearningmastery.com/classification-and-regression-trees-for-machine-learning/
+#I believe it is not a perfect model of student performance. Because it can split on only one variable.
+
+
+What does the plot represent? What information does this plot tell us?
+# When cp=0.01, ROC=0.88;when cp=0.04,ROC=0.82; when cp=0.55, ROC=0.64. The final value used for the model was cp = 0.0106296, the corresponding ROC is 0.88. 
+
+Now predict results from the test data and describe import attributes of this test. Do you believe it is a successful model of student performance, why/why not?
+#I believe it is not a very successful model. The overall accuracy is 0.9 which is quite good. The specificity is very high (0.99), but sensitivity is not ideal (0.69). That means the model is not accurate enough when predicting students who drop the courses.
+
+```{r}
+TEST2 <- TEST[,c(2:10)] #Remove the student_id variable that we do not want to use in the model
+
+#Generate prediction using previously trained model
+cartClasses <- predict(cartFit, newdata = TEST2)
+
+#Generate model statistics
+install.packages('e1071') 
+library(e1071)
+confusionMatrix(data = cartClasses, TEST2$complete)
+
+```
+
+## C4.5-Type Trees
+
+You will now repeat the same prediction but using a different tree-based algorithm called [J48](). J48 is a Java implementation of the C4.5 decsion tree algorithm of [Quinlan (1993)](). 
+
+How does the C4.5 algorithm differ from the CART algorithm?
+#CART algorithm builds a binary tree model, and C4.5 algorithm can splits dataset into more than two subsets that can be one class or the other at nodes.
+Train the J48 model on the same training data and examine your results.
+```{r}
+j48Fit <- train(complete ~ ., #Define which variable to predict 
+                 data = TRAIN2, #Define the data set to train the model on
+                 trControl = ctrl, #Tell caret the control elements
+                 method = "J48", #Define the model type
+                 metric = "ROC", #Tell caret to calculate the ROC curve
+                 preProc = c("center", "scale"))
+summary(j48Fit)
+j48Fit
+plot(j48Fit)
+
+
+```
+Describe important model attribues of your tree. Do you believe it is a successful model of student performance, why/why not?
+#compared to cart model, c4.5 model is better. The final ROC is 0.91 when C = 0.5 and M = 3, which is higher than cart model's ROC. 
+
+
+What does the plot represent? What information does this plot tell us?
+#In the plot we find that when minimum instances per leaf equals to 3, confidence threshold equals to 0.5, we get the largest ROC. 
+
+Now test your new J48 model by predicting the test data and generating model fit statistics.
+
+```{r}
+plot(j48Fit)
+j48Classes<-predict(j48Fit, TEST2)
+confusionMatrix(data = j48Classes, TEST2$complete)
+
+
+```
+
+There is an updated version of the C4.5 model called C5.0, it is implemented in the C50 package. What improvements have been made to the newer version? 
+#C5.0 is suitable for dealing with big data sets. C5.0 uses boosting to improve the accuracy of model, which is also known as Boosting Trees. And the computing speed of C5.0 is faster than C4.5 model.
+
+Install the C50 package, train and then test the C5.0 model on the same data.
+
+```{r}
+c50Fit <- train(complete ~ ., #Define which variable to predict 
+                data = TRAIN2, #Define the data set to train the model on
+                trControl = ctrl, #Tell caret the control elements
+                method = "C5.0", #Define the model type
+                metric = "ROC", #Tell caret to calculate the ROC curve
+                preProc = c("center", "scale"))
+summary(c50Fit)
+c50Classes<- predict(c50Fit, TEST2)
+confusionMatrix(data = c50Classes, TEST2$complete)
+
+```
+
+## Compare the models
+
+caret allows us to compare all three models at once.
+
+```{r}
+resamps <- resamples(list(cart = cartFit, jfoureight = j48Fit, cfiveo = c50Fit))
+summary(resamps)
+```
+
+What does the model summary tell us? Which model do you believe is the best?
+# C5.0 model has the highest ROC, cart model has the highest specificity and C4.5 model has the highest sensitivity. I think C5.0 is the best model because it has a better overall performance in ROC, specificity and sensitivity.
+
+
+Which variables (features) within your chosen model are important, do these features provide insights that may be useful in solving the problem of students dropping out of courses?
+#using randomForest model to find out the importance of variables in prediction. 
+install.packages("randomForest")
+library(randomForest)
+variable <- randomForest(complete ~ .,TRAIN2)
+varImpPlot(variable,type=2)
+#From the graph, we see "years" is the most important variable in predicting, and "course_id" is the second important one.
